@@ -1451,7 +1451,7 @@ function downloadBackupJSON() {
   const backupStr = localStorage.getItem('_autoBackup');
   let data;
   if (backupStr) {
-    try { data = JSON.parse(backupStr); } catch { data = {}; }
+    try { data = JSON.parse(backupStr); } catch { data = {}; showToast('Aviso: backup salvo corrompido, baixando dados atuais.', 'warning'); }
   } else {
     data = {};
     for (let i = 0; i < localStorage.length; i++) {
@@ -2284,9 +2284,7 @@ function handleImportFile(event) {
 function executeImport() {
   if (!_importData) { closeModal('modalImportConfirm'); return; }
   // Clear existing
-  const keys = [];
-  for (let i = 0; i < localStorage.length; i++) keys.push(localStorage.key(i));
-  keys.forEach(k => localStorage.removeItem(k));
+  localStorage.clear();
   // Restore
   Object.entries(_importData).forEach(([k, v]) => {
     localStorage.setItem(k, typeof v === 'string' ? v : JSON.stringify(v));
@@ -2300,9 +2298,7 @@ function executeImport() {
 function executeFullReset() {
   const val = document.getElementById('fullResetInput').value;
   if (val !== 'CONFIRMAR') { showToast('Digite "CONFIRMAR" para prosseguir!', 'warning'); return; }
-  const keys = [];
-  for (let i = 0; i < localStorage.length; i++) keys.push(localStorage.key(i));
-  keys.forEach(k => localStorage.removeItem(k));
+  localStorage.clear();
   markDirty();
   closeModal('modalFullReset');
   showToast('Todos os dados foram apagados!', 'success');
