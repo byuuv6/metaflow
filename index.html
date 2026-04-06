@@ -4,8 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MetaFlow — Rastreador de Metas</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
   <style>
     :root {
       --bg: #0f0f1a;
@@ -948,6 +950,7 @@ function getRecords(goalId) {
 
 function saveRecords(goalId, records) {
   localStorage.setItem('_records_' + goalId, JSON.stringify(records));
+  markDirty();
 }
 
 function addRecord(goalId, date, value, note) {
@@ -980,6 +983,7 @@ function getCustomGoals() {
 
 function saveCustomGoals(goals) {
   localStorage.setItem('_customMetas', JSON.stringify(goals));
+  markDirty();
 }
 
 function getDaysBadge(goalId) {
@@ -1288,15 +1292,48 @@ function toggleHistory(histId) {
 // ================================================================
 //  MAIN UPDATE
 // ================================================================
-function updateAll() {
-  renderDashboard();
-  renderFinanceiro();
-  renderProdutividade();
-  renderCustomGoals();
-  updateHistoryFilters();
-  renderHistory();
+let _dirty = true;
+
+function markDirty() { _dirty = true; }
+
+function getActiveTab() {
+  const active = document.querySelector('.tab-content.active');
+  return active ? active.id.replace('tab-', '') : 'dashboard';
+}
+
+function updateAll(force) {
+  if (!force && !_dirty) return;
+  _dirty = false;
+  const tab = getActiveTab();
+  // Always update summary + streak (shown on dashboard)
   updateSummary();
   updateStreakDisplay();
+  renderTabContent(tab);
+}
+
+function renderTabContent(tabId) {
+  switch (tabId) {
+    case 'dashboard':
+      renderDashboard();
+      break;
+    case 'financeiro':
+      renderFinanceiro();
+      break;
+    case 'produtividade':
+      renderProdutividade();
+      break;
+    case 'extras':
+      renderCustomGoals();
+      break;
+    case 'historico':
+      updateHistoryFilters();
+      renderHistory();
+      break;
+    case 'graficos':
+      setTimeout(renderCharts, 50);
+      break;
+    // config tab is static, no render needed
+  }
 }
 
 // ================================================================
@@ -1595,8 +1632,7 @@ function showTab(tabId) {
     if (b.getAttribute('data-tab') === tabId) b.classList.add('active');
   });
 
-  if (tabId === 'graficos') { setTimeout(renderCharts, 120); }
-  if (tabId === 'historico') { updateHistoryFilters(); renderHistory(); }
+  renderTabContent(tabId);
 }
 
 // ================================================================
@@ -1829,6 +1865,7 @@ function executeFullReset() {
   const keys = [];
   for (let i = 0; i < localStorage.length; i++) keys.push(localStorage.key(i));
   keys.forEach(k => localStorage.removeItem(k));
+  markDirty();
   closeModal('modalFullReset');
   showToast('Todos os dados foram apagados!', 'success');
   updateAll();
@@ -2194,8 +2231,10 @@ function setDefaultDates() {
 function init() {
   loadTheme();
   setDefaultDates();
-  updateAll();
-  setInterval(updateAll, 60000);
+  requestAnimationFrame(() => {
+    updateAll();
+    setInterval(updateAll, 60000);
+  });
 }
 
 document.addEventListener('DOMContentLoaded', init);
