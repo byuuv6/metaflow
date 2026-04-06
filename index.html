@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js" defer></script>
   <style>
     :root {
       --bg: #0f0f1a;
@@ -518,6 +519,18 @@
     input[type="color"] { width:44px; height:36px; border:1px solid var(--border); border-radius:6px; cursor:pointer; background:none; padding:2px; }
     /* ---- Forecast text ---- */
     .forecast-text { font-size:0.73rem; color:var(--text-muted); margin-top:0.3rem; }
+    /* ---- Print / PDF ---- */
+    @media print {
+      .header, .navbar, .fab, .btn, .input-row, .history-toggle, .inline-edit,
+      .toast-container, .modal-overlay, #toastContainer { display: none !important; }
+      .tab-content { display: block !important; }
+      .goal-card { break-inside: avoid; page-break-inside: avoid; }
+      body { background: #fff !important; color: #000 !important; }
+      .card, .goal-card, .chart-card { box-shadow: none !important; border: 1px solid #ccc !important; }
+      .history-section { display: block !important; }
+    }
+    /* ---- Ranking ---- */
+    .ranking-item { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem; }
   </style>
 </head>
 <body>
@@ -580,6 +593,9 @@
 
     <div class="section-title">📈 Produtividade</div>
     <div id="dashProdCards"></div>
+
+    <div class="section-title" style="margin-top:1.5rem;">🏆 Ranking das Metas</div>
+    <div id="rankingSection" style="margin-bottom:1.5rem;"></div>
   </div>
 
   <!-- ====== TAB: FINANCEIRO ====== -->
@@ -619,6 +635,7 @@
         <option value="month">Este mês</option>
       </select>
       <button class="btn btn-secondary btn-sm" onclick="exportCSV()">📥 Exportar CSV</button>
+      <button class="btn btn-secondary btn-sm" onclick="exportPDF()">📄 Exportar PDF</button>
     </div>
     <div style="overflow-x:auto;">
       <table class="history-table">
@@ -706,7 +723,17 @@
             <div style="font-weight:600;">Exportar CSV</div>
             <div style="font-size:0.83rem;color:var(--text-muted);">Baixar todos os registros em planilha</div>
           </div>
-          <button class="btn btn-secondary" onclick="exportCSV()">📥 Exportar</button>
+          <button class="btn btn-secondary" onclick="exportCSV()">📥 Exportar CSV</button>
+          <button class="btn btn-secondary" onclick="exportPDF()" style="margin-left:0.4rem;">📄 PDF</button>
+        </div>
+        <hr class="divider" style="margin:0;">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem;">
+          <div>
+            <div style="font-weight:600;">Importar Backup</div>
+            <div style="font-size:0.83rem;color:var(--text-muted);">Restaurar dados de arquivo JSON</div>
+          </div>
+          <button class="btn btn-secondary" onclick="document.getElementById('importFileInput').click()">📥 Importar Backup</button>
+          <input type="file" id="importFileInput" accept=".json" style="display:none;" onchange="handleImportFile(event)">
         </div>
         <hr class="divider" style="margin:0;">
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem;">
@@ -720,20 +747,27 @@
     </div>
 
     <div class="settings-section">
+      <div class="settings-section-title">Backup Automático</div>
+      <div class="card" style="display:flex;flex-direction:column;gap:0.875rem;">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem;">
+          <div>
+            <div style="font-weight:600;">Status do Backup</div>
+            <div id="autoBackupInfo" style="font-size:0.83rem;color:var(--text-muted);">Nenhum backup ainda</div>
+          </div>
+          <button class="btn btn-secondary" onclick="downloadBackupJSON()">📤 Baixar backup JSON</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-section">
       <div class="settings-section-title">Informações</div>
       <div class="card">
         <div style="font-size:0.845rem;color:var(--text-muted);line-height:1.7;">
           <div><strong style="color:var(--text);">MetaFlow</strong> — Rastreador de Metas Financeiras e Pessoais</div>
           <div>Data de início das metas fixas: <strong style="color:var(--accent);font-family:var(--mono);">06/04/2026</strong></div>
           <div>Todos os dados são salvos no LocalStorage do navegador.</div>
-          <div style="margin-top:0.5rem;">
-            Metas fixas:
-            <span style="color:var(--text);font-weight:600;">Investimento</span> (R$44,44/dia) ·
-            <span style="color:var(--text);font-weight:600;">Despesas</span> (R$53,33/dia) ·
-            <span style="color:var(--text);font-weight:600;">Reserva</span> (R$15/dia) ·
-            <span style="color:var(--text);font-weight:600;">Dívidas</span> (R$5/dia) ·
-            <span style="color:var(--text);font-weight:600;">Ligações</span> (30/dia) ·
-            <span style="color:var(--text);font-weight:600;">Instagram</span> (2 vídeos/semana)
+          <div style="margin-top:0.5rem;" id="configFixedGoalsSummary">
+            Metas fixas: carregando...
           </div>
         </div>
       </div>
@@ -781,15 +815,15 @@
       <div class="form-row">
         <div class="form-group">
           <label class="form-label">Tipo *</label>
-          <select class="form-control" id="goalTipo" required>
+          <select class="form-control" id="goalTipo" required onchange="updateGoalFormFields()">
             <option value="financeiro">💰 Financeiro</option>
             <option value="contagem">🔢 Contagem</option>
             <option value="percentual">📊 Percentual</option>
           </select>
         </div>
-        <div class="form-group">
+        <div class="form-group" id="goalUnidadeGroup">
           <label class="form-label">Unidade</label>
-          <input type="text" class="form-control" id="goalUnidade" placeholder="ex: min, km, R$">
+          <input type="text" class="form-control" id="goalUnidade" placeholder="ex: min, km, páginas">
         </div>
       </div>
       <div class="form-row">
@@ -801,8 +835,12 @@
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">Valor por período *</label>
-          <input type="number" class="form-control" id="goalValorDiario" required step="0.01" min="0" placeholder="0">
+          <label class="form-label" id="goalValorDiarioLabel">Valor por período *</label>
+          <div style="display:flex;align-items:center;gap:0.35rem;">
+            <span id="goalValorPrefix" style="font-size:0.875rem;color:var(--text-muted);display:none;">R$</span>
+            <input type="text" inputmode="decimal" class="form-control" id="goalValorDiario" required placeholder="0" style="flex:1;">
+            <span id="goalValorSuffix" style="font-size:0.875rem;color:var(--text-muted);display:none;">%</span>
+          </div>
         </div>
       </div>
       <div class="form-row">
@@ -871,6 +909,49 @@
       <button class="modal-close" onclick="closeModal('modalReset')">✕</button>
     </div>
     <div id="resetModalContent"></div>
+  </div>
+</div>
+
+<!-- ===== MODAL: EDIT FIXED GOAL ===== -->
+<div class="modal-overlay" id="modalEditFixedGoal" onclick="closeModalOnOverlay(event,'modalEditFixedGoal')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title" id="editFixedGoalTitle">✏️ Editar Meta Fixa</span>
+      <button class="modal-close" onclick="closeModal('modalEditFixedGoal')">✕</button>
+    </div>
+    <form id="editFixedGoalForm" onsubmit="saveEditFixedGoal(event)">
+      <input type="hidden" id="editFixedGoalId">
+      <div class="form-group">
+        <label class="form-label">Nome</label>
+        <input type="text" class="form-control" id="efgNome" required>
+      </div>
+      <div id="efgFieldsContainer"></div>
+      <div style="display:flex;gap:0.75rem;justify-content:space-between;margin-top:0.75rem;flex-wrap:wrap;">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="restoreFixedGoalDefaults()">↩️ Restaurar padrões</button>
+        <div style="display:flex;gap:0.5rem;">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('modalEditFixedGoal')">Cancelar</button>
+          <button type="submit" class="btn btn-primary">💾 Salvar</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ===== MODAL: IMPORT CONFIRM ===== -->
+<div class="modal-overlay" id="modalImportConfirm" onclick="closeModalOnOverlay(event,'modalImportConfirm')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title">📥 Importar Backup</span>
+      <button class="modal-close" onclick="closeModal('modalImportConfirm')">✕</button>
+    </div>
+    <div class="alert alert-warning" style="margin-bottom:1rem;">
+      ⚠️ Isso substituirá <strong>TODOS</strong> os dados atuais. Esta ação não pode ser desfeita!
+    </div>
+    <div id="importFileInfo" style="margin-bottom:1rem;font-size:0.875rem;color:var(--text-muted);"></div>
+    <div style="display:flex;gap:0.75rem;justify-content:flex-end;margin-top:0.75rem;">
+      <button class="btn btn-secondary" onclick="closeModal('modalImportConfirm')">Cancelar</button>
+      <button class="btn btn-primary" onclick="executeImport()">📥 Confirmar Importação</button>
+    </div>
   </div>
 </div>
 
@@ -951,6 +1032,7 @@ function getRecords(goalId) {
 function saveRecords(goalId, records) {
   localStorage.setItem('_records_' + goalId, JSON.stringify(records));
   markDirty();
+  autoBackup();
 }
 
 function addRecord(goalId, date, value, note) {
@@ -984,6 +1066,7 @@ function getCustomGoals() {
 function saveCustomGoals(goals) {
   localStorage.setItem('_customMetas', JSON.stringify(goals));
   markDirty();
+  autoBackup();
 }
 
 function getDaysBadge(goalId) {
@@ -1108,6 +1191,44 @@ function calcGoal(goal) {
 }
 
 // ================================================================
+//  FIXED GOALS CONFIG (editable)
+// ================================================================
+const FIXED_GOALS_DEFAULTS = JSON.parse(JSON.stringify(FIXED_GOALS));
+
+function loadFixedGoalConfigs() {
+  try {
+    const stored = JSON.parse(localStorage.getItem('_configMetas') || '{}');
+    Object.keys(stored).forEach(id => {
+      if (FIXED_GOALS[id]) {
+        Object.assign(FIXED_GOALS[id], stored[id]);
+      }
+    });
+  } catch {}
+}
+
+function saveFixedGoalConfig(id, config) {
+  try {
+    const stored = JSON.parse(localStorage.getItem('_configMetas') || '{}');
+    stored[id] = config;
+    localStorage.setItem('_configMetas', JSON.stringify(stored));
+    Object.assign(FIXED_GOALS[id], config);
+  } catch {}
+}
+
+function resetFixedGoalConfig(id) {
+  try {
+    const stored = JSON.parse(localStorage.getItem('_configMetas') || '{}');
+    delete stored[id];
+    localStorage.setItem('_configMetas', JSON.stringify(stored));
+    Object.assign(FIXED_GOALS[id], FIXED_GOALS_DEFAULTS[id]);
+  } catch {}
+}
+
+function getEffectiveFixedGoals() {
+  return FIXED_GOALS;
+}
+
+// ================================================================
 //  RENDER GOAL CARD
 // ================================================================
 function renderGoalCard(goal, container, isFixed) {
@@ -1148,7 +1269,7 @@ function renderGoalCard(goal, container, isFixed) {
           <button class="btn btn-sm btn-secondary" style="margin-right:3px;" onclick="startInlineEdit('${goal.id}','${r.id}')">✏️</button>
           <button class="btn btn-sm btn-danger" onclick="deleteRecordUI('${goal.id}','${r.id}')">🗑️</button>
           <div class="inline-edit" id="inline_${r.id}">
-            <input type="number" id="inlineVal_${r.id}"  value="${r.value}"      step="0.01" style="width:75px;">
+            <input type="text" inputmode="decimal" id="inlineVal_${r.id}" value="${r.value}" style="width:75px;">
             <input type="text"   id="inlineNote_${r.id}" value="${r.note || ''}" placeholder="nota" style="width:80px;">
             <input type="date"   id="inlineDate_${r.id}" value="${r.date}"       style="width:125px;">
             <button class="btn btn-sm btn-primary"    onclick="saveInlineEdit('${goal.id}','${r.id}')">✓</button>
@@ -1159,7 +1280,8 @@ function renderGoalCard(goal, container, isFixed) {
   }
 
   const actionBtns = isFixed
-    ? `<button class="btn btn-sm btn-danger" onclick="confirmResetGoal('${goal.id}')" title="Resetar meta">🗑️ Reset</button>`
+    ? `<button class="btn btn-sm btn-secondary" style="margin-right:3px;" onclick="openEditFixedGoal('${goal.id}')" title="Editar meta">✏️</button>
+       <button class="btn btn-sm btn-danger" onclick="confirmResetGoal('${goal.id}')" title="Resetar meta">🗑️ Reset</button>`
     : `<button class="btn btn-sm btn-secondary" style="margin-right:3px;" onclick="openEditGoal('${goal.id}')" title="Editar meta">✏️</button>
        <button class="btn btn-sm btn-danger" onclick="confirmResetGoal('${goal.id}')" title="Resetar meta">🗑️</button>`;
 
@@ -1212,7 +1334,7 @@ function renderGoalCard(goal, container, isFixed) {
       <hr class="divider">
 
       <div class="input-row">
-        <input type="number" id="inp_${goal.id}"  placeholder="${isCurr ? 'Valor R$' : 'Quantidade'}" step="0.01" min="0" style="max-width:130px;">
+        <input type="text" inputmode="decimal" id="inp_${goal.id}" placeholder="${isCurr ? 'Ex: 100,00' : 'Ex: 30'}" style="max-width:130px;">
         <input type="date"   id="date_${goal.id}" value="${today()}">
         <input type="text"   id="note_${goal.id}" placeholder="Nota (opcional)" style="flex:2;min-width:90px;">
         <button class="btn btn-primary btn-sm" onclick="addRecordUI('${goal.id}')">+ Registrar</button>
@@ -1245,13 +1367,15 @@ function addRecordUI(goalId) {
   const inp  = document.getElementById('inp_'  + goalId);
   const dateI = document.getElementById('date_' + goalId);
   const noteI = document.getElementById('note_' + goalId);
-  const val  = parseFloat(inp.value);
+  const raw = inp.value.trim().replace(/,/g, '.');
+  const val = parseFloat(raw);
   if (isNaN(val) || val <= 0) { showToast('Informe um valor válido!', 'warning'); return; }
   addRecord(goalId, dateI.value || today(), val, noteI.value || '');
   inp.value  = '';
   noteI.value = '';
   showToast('Registro adicionado!', 'success');
   updateAll();
+  checkGoalAchievement(goalId);
 }
 
 function deleteRecordUI(goalId, recId) {
@@ -1275,10 +1399,12 @@ function saveInlineEdit(goalId, recId) {
   const val  = document.getElementById('inlineVal_'  + recId).value;
   const note = document.getElementById('inlineNote_' + recId).value;
   const date = document.getElementById('inlineDate_' + recId).value;
-  if (!val || isNaN(parseFloat(val))) { showToast('Valor inválido!', 'warning'); return; }
-  updateRecord(goalId, recId, val, note, date);
+  const parsedVal = parseFloat((val || '').trim().replace(/,/g, '.'));
+  if (isNaN(parsedVal) || parsedVal <= 0) { showToast('Valor inválido!', 'warning'); return; }
+  updateRecord(goalId, recId, parsedVal, note, date);
   showToast('Registro atualizado!', 'success');
   updateAll();
+  checkGoalAchievement(goalId);
 }
 
 function toggleHistory(histId) {
@@ -1295,6 +1421,57 @@ function toggleHistory(histId) {
 let _dirty = true;
 
 function markDirty() { _dirty = true; }
+
+// ================================================================
+//  AUTO BACKUP
+// ================================================================
+function autoBackup() {
+  const data = {};
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key !== '_autoBackup' && key !== '_autoBackupDate') {
+      data[key] = localStorage.getItem(key);
+    }
+  }
+  localStorage.setItem('_autoBackup', JSON.stringify(data));
+  const now = new Date().toLocaleString('pt-BR');
+  localStorage.setItem('_autoBackupDate', now);
+  if (document.readyState !== 'loading') updateBackupInfo();
+}
+
+function updateBackupInfo() {
+  const el = document.getElementById('autoBackupInfo');
+  if (el) {
+    const date = localStorage.getItem('_autoBackupDate');
+    el.textContent = date ? 'Último backup: ' + date : 'Nenhum backup ainda';
+  }
+}
+
+function downloadBackupJSON() {
+  const backupStr = localStorage.getItem('_autoBackup');
+  let data;
+  if (backupStr) {
+    try { data = JSON.parse(backupStr); } catch { data = {}; showToast('Aviso: backup salvo corrompido, baixando dados atuais.', 'warning'); }
+  } else {
+    data = {};
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      data[key] = localStorage.getItem(key);
+    }
+  }
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  const d    = new Date().toISOString().slice(0, 10);
+  a.download = 'metaflow-backup-' + d + '.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast('Backup baixado!', 'success');
+}
+
 
 function getActiveTab() {
   const active = document.querySelector('.tab-content.active');
@@ -1390,6 +1567,77 @@ function renderDashboard() {
   const dashProd = document.getElementById('dashProdCards');
   dashProd.innerHTML = '';
   ['ligacoes','instagram'].forEach(id => renderGoalCard(FIXED_GOALS[id], dashProd, true));
+
+  renderRanking();
+}
+
+// ================================================================
+//  RENDER RANKING
+// ================================================================
+function renderRanking() {
+  const container = document.getElementById('rankingSection');
+  if (!container) return;
+
+  const allGoals = [...Object.values(getEffectiveFixedGoals()), ...getCustomGoals()];
+  const ranked = allGoals.map(g => {
+    const calc = calcGoal(g);
+    return { g, progress: calc.progress };
+  }).sort((a, b) => b.progress - a.progress);
+
+  const medals = ['🥇','🥈','🥉'];
+
+  let html = '<div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem;">';
+  ranked.forEach((item, i) => {
+    const { g, progress } = item;
+    const pct = Math.min(progress, 100);
+    const color = pct >= 90 ? 'var(--green)' : pct >= 50 ? 'var(--yellow)' : 'var(--red)';
+    const medal = i < 3 ? medals[i] : '';
+    html += `
+      <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem;flex-wrap:wrap;">
+        <div style="min-width:20px;font-size:1.1rem;">${medal}</div>
+        <div style="flex:1;min-width:120px;">
+          <div style="font-size:0.845rem;font-weight:600;margin-bottom:0.3rem;">${g.emoji || '🎯'} ${g.nome}</div>
+          <div style="background:var(--border);border-radius:99px;height:5px;overflow:hidden;">
+            <div style="width:${pct.toFixed(1)}%;height:100%;background:${color};border-radius:99px;transition:width 0.5s;"></div>
+          </div>
+        </div>
+        <div style="font-family:var(--mono);font-size:0.875rem;font-weight:700;color:${color};min-width:48px;text-align:right;">${pct.toFixed(1)}%</div>
+      </div>`;
+  });
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+// ================================================================
+//  ACHIEVEMENT CHECK (Confetti)
+// ================================================================
+function checkGoalAchievement(goalId) {
+  const allGoals = Object.assign({}, getEffectiveFixedGoals());
+  getCustomGoals().forEach(g => { allGoals[g.id] = g; });
+  const goal = allGoals[goalId];
+  if (!goal) return;
+
+  const calc = calcGoal(goal);
+  if (calc.progress < 100) return;
+
+  const todayStr = today();
+  const key = '_achieved_' + goalId + '_' + todayStr;
+  if (localStorage.getItem(key)) return; // already fired today
+  localStorage.setItem(key, '1');
+
+  // Show toast
+  showToast('🎉 Parabéns! Meta ' + goal.nome + ' atingida!', 'success');
+
+  // Fire confetti
+  if (typeof confetti === 'function') {
+    const colors = [goal.cor || '#6c63ff', '#4ecdc4', '#fbbf24', '#f87171', '#4ade80'];
+    const end = Date.now() + 3000;
+    (function frame() {
+      confetti({ particleCount: 3, angle: 60, spread: 55, origin: { x: 0 }, colors });
+      confetti({ particleCount: 3, angle: 120, spread: 55, origin: { x: 1 }, colors });
+      if (Date.now() < end) requestAnimationFrame(frame);
+    })();
+  }
 }
 
 // ================================================================
@@ -1672,7 +1920,7 @@ function submitQuickEntry() {
   allGoals.forEach(g => {
     const el = document.getElementById('qe_' + g.id);
     if (!el) return;
-    const val = parseFloat(el.value);
+    const val = parseFloat((el.value || '').trim().replace(/,/g, '.'));
     if (!isNaN(val) && val > 0) {
       const date = document.getElementById('qedate_' + g.id)?.value || today();
       const note = document.getElementById('qenote_' + g.id)?.value || '';
@@ -1681,8 +1929,116 @@ function submitQuickEntry() {
     }
   });
   closeModal('modalQuickEntry');
-  if (count > 0) { showToast(`${count} registro(s) adicionado(s)!`, 'success'); updateAll(); }
-  else showToast('Nenhum valor informado.', 'warning');
+  if (count > 0) {
+    showToast(`${count} registro(s) adicionado(s)!`, 'success');
+    updateAll();
+    const allGoals2 = [...Object.values(getEffectiveFixedGoals()), ...getCustomGoals()];
+    allGoals2.forEach(g => {
+      const el2 = document.getElementById('qe_' + g.id);
+      if (el2 && parseFloat((el2.value || '').trim().replace(/,/g, '.')) > 0) checkGoalAchievement(g.id);
+    });
+  } else showToast('Nenhum valor informado.', 'warning');
+}
+
+// ================================================================
+//  EDIT FIXED GOAL MODAL
+// ================================================================
+function openEditFixedGoal(id) {
+  const goal = FIXED_GOALS[id];
+  if (!goal) return;
+
+  document.getElementById('editFixedGoalId').value = id;
+  document.getElementById('editFixedGoalTitle').textContent = `✏️ Editar: ${goal.emoji || ''} ${goal.nome}`;
+  document.getElementById('efgNome').value = goal.nome;
+
+  let fieldsHtml = '';
+  if (id === 'investimento' || id === 'despesas') {
+    fieldsHtml = `
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Valor Total (R$)</label>
+          <input type="text" inputmode="decimal" class="form-control" id="efgValorTotal" value="${goal.valorTotal || ''}" placeholder="Ex: 2000">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Prazo (dias)</label>
+          <input type="number" class="form-control" id="efgDias" value="${goal.dias || ''}" placeholder="Ex: 45" min="1">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Valor Diário (R$) — calculado automaticamente se em branco</label>
+        <input type="text" inputmode="decimal" class="form-control" id="efgValorDiario" value="${goal.valorDiario || ''}" placeholder="Ex: 44.44">
+      </div>`;
+  } else if (id === 'reserva' || id === 'dividas') {
+    fieldsHtml = `
+      <div class="form-group">
+        <label class="form-label">Valor fixo diário (R$)</label>
+        <input type="text" inputmode="decimal" class="form-control" id="efgValorDiario" value="${goal.valorDiario || ''}" placeholder="Ex: 15.00" required>
+      </div>`;
+  } else if (id === 'ligacoes') {
+    fieldsHtml = `
+      <div class="form-group">
+        <label class="form-label">Meta diária (ligações)</label>
+        <input type="number" class="form-control" id="efgValorDiario" value="${goal.valorDiario || ''}" placeholder="Ex: 30" min="1" required>
+      </div>`;
+  } else if (id === 'instagram') {
+    fieldsHtml = `
+      <div class="form-group">
+        <label class="form-label">Meta semanal (vídeos)</label>
+        <input type="number" class="form-control" id="efgValorDiario" value="${goal.valorDiario || ''}" placeholder="Ex: 2" min="1" required>
+      </div>`;
+  }
+
+  document.getElementById('efgFieldsContainer').innerHTML = fieldsHtml;
+  openModal('modalEditFixedGoal');
+}
+
+function saveEditFixedGoal(event) {
+  event.preventDefault();
+  const id = document.getElementById('editFixedGoalId').value;
+  const nome = document.getElementById('efgNome').value.trim();
+  const config = { nome };
+
+  const vdEl = document.getElementById('efgValorDiario');
+  if (vdEl) {
+    const vd = parseFloat((vdEl.value || '').trim().replace(/,/g, '.'));
+    if (!isNaN(vd) && vd > 0) config.valorDiario = vd;
+  }
+
+  const vtEl = document.getElementById('efgValorTotal');
+  if (vtEl) {
+    const vt = parseFloat((vtEl.value || '').trim().replace(/,/g, '.'));
+    if (!isNaN(vt) && vt > 0) config.valorTotal = vt;
+  }
+
+  const diasEl = document.getElementById('efgDias');
+  if (diasEl) {
+    const dias = parseInt(diasEl.value || '');
+    if (!isNaN(dias) && dias > 0) {
+      config.dias = dias;
+      // Auto-calculate daily if total is set
+      if (config.valorTotal && !vdEl?.value) {
+        config.valorDiario = parseFloat((config.valorTotal / dias).toFixed(2));
+      }
+    }
+  }
+
+  saveFixedGoalConfig(id, config);
+  closeModal('modalEditFixedGoal');
+  showToast('Meta atualizada!', 'success');
+  markDirty();
+  updateAll();
+  updateConfigSummary();
+}
+
+function restoreFixedGoalDefaults() {
+  const id = document.getElementById('editFixedGoalId').value;
+  if (!confirm('Restaurar os valores padrão desta meta?')) return;
+  resetFixedGoalConfig(id);
+  closeModal('modalEditFixedGoal');
+  showToast('Padrões restaurados!', 'success');
+  markDirty();
+  updateAll();
+  updateConfigSummary();
 }
 
 // ================================================================
@@ -1701,6 +2057,7 @@ function openCreateGoal() {
   document.getElementById('goalPrazo').value         = '';
   document.getElementById('goalStartDate').value     = today();
   document.getElementById('goalCor').value           = '#6c63ff';
+  updateGoalFormFields();
   openModal('modalGoal');
 }
 
@@ -1721,18 +2078,55 @@ function openEditGoal(goalId) {
   document.getElementById('goalPrazo').value         = goal.prazo      || '';
   document.getElementById('goalStartDate').value     = goal.startDate  || today();
   document.getElementById('goalCor').value           = goal.cor        || '#6c63ff';
+  updateGoalFormFields();
   openModal('modalGoal');
 }
 
-function saveGoal(event) {
-  event.preventDefault();
+// ================================================================
+//  GOAL FORM DYNAMIC FIELDS
+// ================================================================
+function updateGoalFormFields() {
+  const tipo = document.getElementById('goalTipo').value;
+  const labelEl    = document.getElementById('goalValorDiarioLabel');
+  const prefixEl   = document.getElementById('goalValorPrefix');
+  const suffixEl   = document.getElementById('goalValorSuffix');
+  const inputEl    = document.getElementById('goalValorDiario');
+  const unidadeGrp = document.getElementById('goalUnidadeGroup');
+
+  if (tipo === 'financeiro') {
+    if (labelEl)    labelEl.textContent    = 'Valor por período *';
+    if (prefixEl)   prefixEl.style.display = 'inline';
+    if (suffixEl)   suffixEl.style.display = 'none';
+    if (inputEl)    inputEl.placeholder    = 'Ex: 100.00';
+    if (unidadeGrp) unidadeGrp.style.display = 'none';
+  } else if (tipo === 'percentual') {
+    if (labelEl)    labelEl.textContent    = 'Meta (%) *';
+    if (prefixEl)   prefixEl.style.display = 'none';
+    if (suffixEl)   suffixEl.style.display = 'inline';
+    if (inputEl)    inputEl.placeholder    = 'Ex: 75';
+    if (unidadeGrp) unidadeGrp.style.display = 'none';
+  } else {
+    // contagem
+    if (labelEl)    labelEl.textContent    = 'Meta por período *';
+    if (prefixEl)   prefixEl.style.display = 'none';
+    if (suffixEl)   suffixEl.style.display = 'none';
+    if (inputEl)    inputEl.placeholder    = 'Ex: 30';
+    if (unidadeGrp) unidadeGrp.style.display = 'block';
+  }
+}
+
+// ================================================================
+//  SAVE GOAL
+// ================================================================
+function saveGoal(e) {
+  e.preventDefault();
   const editId      = document.getElementById('editGoalId').value;
   const nome        = document.getElementById('goalNome').value.trim();
   const emoji       = document.getElementById('goalEmoji').value.trim() || '🎯';
   const tipo        = document.getElementById('goalTipo').value;
   const unidade     = document.getElementById('goalUnidade').value.trim();
   const frequencia  = document.getElementById('goalFrequencia').value;
-  const valorDiario = parseFloat(document.getElementById('goalValorDiario').value);
+  const valorDiario = parseFloat((document.getElementById('goalValorDiario').value || '').trim().replace(/,/g, '.'));
   const vtRaw       = document.getElementById('goalValorTotal').value;
   const valorTotal  = vtRaw ? parseFloat(vtRaw) : null;
   const prazo       = document.getElementById('goalPrazo').value     || null;
@@ -1859,12 +2253,52 @@ function openFullReset() {
   openModal('modalFullReset');
 }
 
+// ================================================================
+//  IMPORT / EXPORT JSON
+// ================================================================
+let _importData = null;
+
+function handleImportFile(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (typeof data !== 'object' || data === null || Array.isArray(data)) {
+        showToast('Arquivo JSON inválido!', 'error');
+        return;
+      }
+      _importData = data;
+      const keyCount = Object.keys(data).length;
+      document.getElementById('importFileInfo').textContent = `Arquivo: ${file.name} — ${keyCount} chave(s) encontrada(s)`;
+      openModal('modalImportConfirm');
+    } catch (err) {
+      showToast('Erro ao ler arquivo JSON!', 'error');
+    }
+    event.target.value = '';
+  };
+  reader.readAsText(file);
+}
+
+function executeImport() {
+  if (!_importData) { closeModal('modalImportConfirm'); return; }
+  // Clear existing
+  localStorage.clear();
+  // Restore
+  Object.entries(_importData).forEach(([k, v]) => {
+    localStorage.setItem(k, typeof v === 'string' ? v : JSON.stringify(v));
+  });
+  _importData = null;
+  closeModal('modalImportConfirm');
+  showToast('Backup importado com sucesso! Recarregando...', 'success');
+  setTimeout(() => location.reload(), 1500);
+}
+
 function executeFullReset() {
   const val = document.getElementById('fullResetInput').value;
   if (val !== 'CONFIRMAR') { showToast('Digite "CONFIRMAR" para prosseguir!', 'warning'); return; }
-  const keys = [];
-  for (let i = 0; i < localStorage.length; i++) keys.push(localStorage.key(i));
-  keys.forEach(k => localStorage.removeItem(k));
+  localStorage.clear();
   markDirty();
   closeModal('modalFullReset');
   showToast('Todos os dados foram apagados!', 'success');
@@ -1874,6 +2308,14 @@ function executeFullReset() {
 // ================================================================
 //  CSV EXPORT
 // ================================================================
+function exportPDF() {
+  const d = new Date();
+  const dateStr = d.toLocaleDateString('pt-BR');
+  document.title = 'MetaFlow — Relatório ' + dateStr;
+  window.print();
+  setTimeout(() => { document.title = 'MetaFlow — Rastreador de Metas'; }, 2000);
+}
+
 function exportCSV() {
   const allGoals = [...Object.values(FIXED_GOALS), ...getCustomGoals()];
   let csv = 'Meta,Emoji,Data,Valor,Unidade,Nota\n';
@@ -2228,11 +2670,27 @@ function setDefaultDates() {
   });
 }
 
+function updateConfigSummary() {
+  const el = document.getElementById('configFixedGoalsSummary');
+  if (!el) return;
+  const fg = getEffectiveFixedGoals();
+  el.innerHTML = `Metas fixas:
+    <span style="color:var(--text);font-weight:600;">${fg.investimento.nome}</span> (R$${fg.investimento.valorDiario}/dia) ·
+    <span style="color:var(--text);font-weight:600;">${fg.despesas.nome}</span> (R$${fg.despesas.valorDiario}/dia) ·
+    <span style="color:var(--text);font-weight:600;">${fg.reserva.nome}</span> (R$${fg.reserva.valorDiario}/dia) ·
+    <span style="color:var(--text);font-weight:600;">${fg.dividas.nome}</span> (R$${fg.dividas.valorDiario}/dia) ·
+    <span style="color:var(--text);font-weight:600;">${fg.ligacoes.nome}</span> (${fg.ligacoes.valorDiario}/dia) ·
+    <span style="color:var(--text);font-weight:600;">${fg.instagram.nome}</span> (${fg.instagram.valorDiario} vídeos/semana)`;
+}
+
 function init() {
   loadTheme();
+  loadFixedGoalConfigs();
   setDefaultDates();
   requestAnimationFrame(() => {
     updateAll();
+    updateBackupInfo();
+    updateConfigSummary();
     setInterval(updateAll, 60000);
   });
 }
