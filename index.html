@@ -1231,7 +1231,7 @@ function getEffectiveFixedGoals() {
 // ================================================================
 //  RENDER GOAL CARD
 // ================================================================
-function renderGoalCard(goal, container, isFixed) {
+function renderGoalCard(goal, container, isFixed, readOnly = false) {
   const calc = calcGoal(goal);
   const { accumulated, expectedSoFar, diff, progress, status, todayValue, remainingToday, dailyTarget, forecast, records } = calc;
 
@@ -1279,7 +1279,7 @@ function renderGoalCard(goal, container, isFixed) {
       </tr>`).join('');
   }
 
-  const actionBtns = isFixed
+  const actionBtns = readOnly ? '' : isFixed
     ? `<button class="btn btn-sm btn-secondary" style="margin-right:3px;" onclick="openEditFixedGoal('${goal.id}')" title="Editar meta">✏️</button>
        <button class="btn btn-sm btn-danger" onclick="confirmResetGoal('${goal.id}')" title="Resetar meta">🗑️ Reset</button>`
     : `<button class="btn btn-sm btn-secondary" style="margin-right:3px;" onclick="openEditGoal('${goal.id}')" title="Editar meta">✏️</button>
@@ -1333,12 +1333,12 @@ function renderGoalCard(goal, container, isFixed) {
       ${forecastHtml}
       <hr class="divider">
 
-      <div class="input-row">
+      ${readOnly ? '' : `<div class="input-row">
         <input type="text" inputmode="decimal" id="inp_${goal.id}" placeholder="${isCurr ? 'Ex: 44,00' : 'Quantidade'}" style="max-width:130px;">
         <input type="date"   id="date_${goal.id}" value="${today()}">
         <input type="text"   id="note_${goal.id}" placeholder="Nota (opcional)" style="flex:2;min-width:90px;">
         <button class="btn btn-primary btn-sm" onclick="addRecordUI('${goal.id}')">+ Registrar</button>
-      </div>
+      </div>`}
 
       <div style="margin-top:0.65rem;">
         <button class="history-toggle" onclick="toggleHistory('${histId}')">
@@ -1646,7 +1646,7 @@ function checkGoalAchievement(goalId) {
 function renderFinanceiro() {
   const c = document.getElementById('financeCards');
   c.innerHTML = '';
-  ['investimento','despesas','reserva','dividas'].forEach(id => renderGoalCard(FIXED_GOALS[id], c, true));
+  ['investimento','despesas','reserva','dividas'].forEach(id => renderGoalCard(FIXED_GOALS[id], c, true, true));
 }
 
 // ================================================================
@@ -1655,7 +1655,7 @@ function renderFinanceiro() {
 function renderProdutividade() {
   const c = document.getElementById('prodCards');
   c.innerHTML = '';
-  ['ligacoes','instagram'].forEach(id => renderGoalCard(FIXED_GOALS[id], c, true));
+  ['ligacoes','instagram'].forEach(id => renderGoalCard(FIXED_GOALS[id], c, true, true));
 }
 
 // ================================================================
